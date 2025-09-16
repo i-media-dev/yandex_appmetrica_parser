@@ -21,7 +21,7 @@ load_dotenv()
 setup_logging()
 
 
-class DataSaveClient:
+class AppmetricaSaveClient:
 
     def __init__(
         self,
@@ -49,10 +49,14 @@ class DataSaveClient:
 
     def _get_appmetrica_report(
         self,
+        shop_id: str,
         date_reports: str,
         campaign_name: str,
-        campaign_id: str
     ) -> list:
+        """
+        Защищенный метод.
+        Получает отчет из Яндекс.Апметрика для указанного магазина и периода.
+        """
         try:
             date_obj = dt.datetime.strptime(date_reports, '%Y-%m-%d')
             days_before = date_obj - dt.timedelta(days=DAYS_BEFORE)
@@ -61,7 +65,7 @@ class DataSaveClient:
             headers = {
                 "Authorization": f"OAuth {self.token}"}
             params = {
-                "ids": "2550202",
+                "ids": shop_id,
                 "date1": date_reports,
                 "date2": date_reports,
                 "group": "Day",
@@ -77,13 +81,10 @@ class DataSaveClient:
                 "request_domain": "ru"
             }
 
-            campaign_value = f"{campaign_name}|{campaign_id}"
-            logging.info(f'Фильтр для кампании: {campaign_value}')
-
             filters = (
                 "(exists ym:o:device with "
                 "(exists(urlParamKey=='utm_campaign' "
-                f"and urlParamValue=='{campaign_value}') "
+                f"and urlParamValue=='{campaign_name}') "
                 f"and specialDefaultDate>='{days_before}' "
                 f"and specialDefaultDate<='{date_reports}'))"
             )
@@ -105,6 +106,11 @@ class DataSaveClient:
                     f'{campaign_name} на {date_reports}'
                 )
                 return [date_reports, campaign_name, 0, 0.0]
+            else:
+                logging.info(
+                    'Данные для кампании '
+                    f'{campaign_name} на {date_reports} успешно получены'
+                )
 
             first_data_item = data['data'][0]
             revenue, transactions = first_data_item.get('metrics', [0.0, 0.0])
@@ -155,9 +161,14 @@ class DataSaveClient:
         except (AttributeError, IndexError, KeyError):
             return DEFAULT_RETURNES.get('error', '')
 
-    def get_filtered_cache_data(self, df_new: pd.DataFrame):
+    def _get_filtered_cache_data(
+        self,
+        df_new: pd.DataFrame,
+        filename_data: str
+    ):
+        """Защищенный метод, получает отфильтрованные данные из кэш-файла."""
         try:
-            temp_cache_path = self._get_file_path('appmetrica_2.csv')
+            temp_cache_path = self._get_file_path(filename_data)
             old_df = pd.read_csv(
                 temp_cache_path,
                 sep=';',
@@ -193,57 +204,57 @@ class DataSaveClient:
             logging.error(f'Ошибка: {e}')
             raise
 
-    def get_all_appmetrica_data(self) -> pd.DataFrame:
+    def _get_all_appmetrica_data(
+        self,
+        shop_id: str,
+        filename_temp: str
+    ) -> pd.DataFrame:
+        """
+        Защищенный метод, получает данные из Яндекс.Апметрика
+        для всех клиентов и периодов.
+        """
+        data_list = []
         df_new = pd.DataFrame(
             columns=['Date', 'CampaignName', 'transactions', 'revenue']
         )
-        temp_cache_path = self._get_file_path('cashe_new.csv')
+        temp_cache_path = self._get_file_path(filename_temp)
         try:
             campaign_df = pd.read_csv(
                 temp_cache_path,
                 sep=';',
                 encoding='cp1251'
             )
-            campaign_df['CampaignId'] = campaign_df[
-                'CampaignId'
-            ].astype(int).astype(str)
-            campaigns_with_ids = campaign_df[
-                ['CampaignName', 'CampaignId']
-            ].drop_duplicates()
+            campaigns_list = campaign_df['CampaignName'].unique().tolist()
         except FileNotFoundError:
             logging.error('Файл с кампаниями не найден')
             return df_new
 
         for date_str in self.dates_list:
-            for _, row in campaigns_with_ids.iterrows():
+            for campaign_name in campaigns_list:
                 try:
-                    campaign_name = row['CampaignName']
-                    campaign_id = row['CampaignId']
-
                     if 'rmp' in campaign_name:
                         continue
 
                     data = self._get_appmetrica_report(
+                        shop_id,
                         date_str,
-                        campaign_name,
-                        campaign_id
+                        campaign_name
                     )
-                    df = pd.DataFrame(
-                        [data],
-                        columns=[
-                            'Date',
-                            'CampaignName',
-                            'transactions',
-                            'revenue'
-                        ]
-                    )
-                    df_new = pd.concat([df_new, df])
-
+                    data_list.append(data)
                 except Exception as e:
                     logging.error(
                         f'Ошибка для кампании {campaign_name} '
                         f'на дату {date_str}: {e}')
                     continue
+        if data_list:
+            df_new = pd.DataFrame(
+                data_list,
+                columns=['Date', 'CampaignName', 'transactions', 'revenue']
+            )
+        else:
+            df_new = pd.DataFrame(
+                columns=['Date', 'CampaignName', 'transactions', 'revenue']
+            )
 
         df_new['transactions'] = df_new['transactions'].astype(int)
         df_new['revenue'] = df_new['revenue'].astype(float)
@@ -255,14 +266,21 @@ class DataSaveClient:
 
         return df_new
 
-    def save_data(self, df_new, old_df) -> None:
+    def save_data(
+        self,
+        shop_id: str,
+        filename_temp: str,
+        filename_data: str
+    ) -> None:
         """Метод сохраняет новые данные, объединяя с существующими."""
+        df_new = self._get_all_appmetrica_data(shop_id, filename_temp)
+        df_old = self._get_filtered_cache_data(df_new, filename_data)
         try:
-            temp_cache_path = self._get_file_path('appmetrica_2.csv')
+            temp_cache_path = self._get_file_path(filename_data)
             if df_new.empty:
                 logging.warning('Нет новых данных для сохранения')
                 return
-            if not isinstance(old_df, pd.DataFrame) or old_df.empty:
+            if not isinstance(df_old, pd.DataFrame) or df_old.empty:
                 df_new.to_csv(
                     temp_cache_path,
                     index=False,
@@ -275,11 +293,11 @@ class DataSaveClient:
                 )
                 return
             for dates in self.dates_list:
-                old_df = old_df[~old_df['Date'].fillna('').str.contains(
+                df_old = df_old[~df_old['Date'].fillna('').str.contains(
                     fr'{dates}', case=False, na=False)]
 
-            old_df = pd.concat([df_new, old_df])
-            old_df.to_csv(
+            df_old = pd.concat([df_new, df_old])
+            df_old.to_csv(
                 temp_cache_path,
                 index=False,
                 header=True,
