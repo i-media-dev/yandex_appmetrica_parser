@@ -50,7 +50,8 @@ class DataSaveClient:
     def _get_appmetrica_report(
         self,
         date_reports: str,
-        campaign_name: str
+        campaign_name: str,
+        campaign_id: str
     ) -> list:
         try:
             date_obj = dt.datetime.strptime(date_reports, '%Y-%m-%d')
@@ -75,21 +76,26 @@ class DataSaveClient:
                 "lang": "ru",
                 "request_domain": "ru"
             }
+
+            campaign_value = f"{campaign_name}|{campaign_id}"
+            logging.info(f'Фильтр для кампании: {campaign_value}')
+
             filters = (
-                f"(exists ym:o:device with "
-                f"(exists(urlParamKey=='utm_campaign' "
-                f"and urlParamValue=='{campaign_name}') "
+                "(exists ym:o:device with "
+                "(exists(urlParamKey=='utm_campaign' "
+                f"and urlParamValue=='{campaign_value}') "
                 f"and specialDefaultDate>='{days_before}' "
                 f"and specialDefaultDate<='{date_reports}'))"
             )
             params['filters'] = filters
+            logging.info(f'Параметры запроса: {params}')
 
             response = requests.get(
                 url,
                 params=params,
                 headers=headers,
-                timeout=30
             )
+            logging.info(f'Полный URL запроса: {response.request.url}')
             response.raise_for_status()
             data = response.json()
 
@@ -195,20 +201,33 @@ class DataSaveClient:
         try:
             campaign_df = pd.read_csv(
                 temp_cache_path,
-                sep=';', encoding='cp1251'
+                sep=';',
+                encoding='cp1251'
             )
-            campaigns_list = campaign_df['CampaignName'].unique().tolist()
+            campaign_df['CampaignId'] = campaign_df[
+                'CampaignId'
+            ].astype(int).astype(str)
+            campaigns_with_ids = campaign_df[
+                ['CampaignName', 'CampaignId']
+            ].drop_duplicates()
         except FileNotFoundError:
             logging.error('Файл с кампаниями не найден')
             return df_new
 
         for date_str in self.dates_list:
-            for campaign_name in campaigns_list:
+            for _, row in campaigns_with_ids.iterrows():
                 try:
+                    campaign_name = row['CampaignName']
+                    campaign_id = row['CampaignId']
+
                     if 'rmp' in campaign_name:
                         continue
 
-                    data = self._get_appmetrica_report(date_str, campaign_name)
+                    data = self._get_appmetrica_report(
+                        date_str,
+                        campaign_name,
+                        campaign_id
+                    )
                     df = pd.DataFrame(
                         [data],
                         columns=[
