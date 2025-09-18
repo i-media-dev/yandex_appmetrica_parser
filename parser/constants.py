@@ -1,3 +1,5 @@
+YANDEX_APPMETRICA_URL = 'https://api.appmetrica.yandex.ru/stat/v1/data'
+
 DEFAULT_FOLDER = 'data'
 """Папка для сохранения .csv файлов по умолчанию."""
 

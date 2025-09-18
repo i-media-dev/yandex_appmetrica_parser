@@ -13,7 +13,8 @@ from parser.constants import (
     DEFAULT_FOLDER,
     DEFAULT_RETURNES,
     LIMIT,
-    PLATFORM_TYPES
+    PLATFORM_TYPES,
+    YANDEX_APPMETRICA_URL
 )
 from parser.logging_config import setup_logging
 
@@ -61,7 +62,7 @@ class AppmetricaSaveClient:
             date_obj = dt.datetime.strptime(date_reports, '%Y-%m-%d')
             days_before = date_obj - dt.timedelta(days=DAYS_BEFORE)
             days_before = days_before.strftime('%Y-%m-%d')
-            url = 'https://api.appmetrica.yandex.ru/stat/v1/data'
+            url = YANDEX_APPMETRICA_URL
             headers = {
                 "Authorization": f"OAuth {self.token}"}
             params = {
@@ -161,14 +162,10 @@ class AppmetricaSaveClient:
         except (AttributeError, IndexError, KeyError):
             return DEFAULT_RETURNES.get('error', '')
 
-    def _get_filtered_cache_data(
-        self,
-        df_new: pd.DataFrame,
-        filename_data: str
-    ):
+    def _get_filtered_cache_data(self, filename_data: str):
         """Защищенный метод, получает отфильтрованные данные из кэш-файла."""
+        temp_cache_path = self._get_file_path(filename_data)
         try:
-            temp_cache_path = self._get_file_path(filename_data)
             old_df = pd.read_csv(
                 temp_cache_path,
                 sep=';',
@@ -185,14 +182,6 @@ class AppmetricaSaveClient:
                     na=False
                 )])
 
-            old_df = pd.concat([df_new, old_df])
-            old_df.to_csv(
-                temp_cache_path,
-                index=False,
-                header=True,
-                sep=';',
-                encoding='cp1251'
-            )
             return old_df
         except FileNotFoundError:
             logging.warning('Файл кэша не найден. Первый запуск.')
@@ -274,7 +263,7 @@ class AppmetricaSaveClient:
     ) -> None:
         """Метод сохраняет новые данные, объединяя с существующими."""
         df_new = self._get_all_appmetrica_data(shop_id, filename_temp)
-        df_old = self._get_filtered_cache_data(df_new, filename_data)
+        df_old = self._get_filtered_cache_data(filename_data)
         try:
             temp_cache_path = self._get_file_path(filename_data)
             if df_new.empty:
