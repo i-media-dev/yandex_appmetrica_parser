@@ -1,5 +1,8 @@
 YANDEX_APPMETRICA_URL = 'https://api.appmetrica.yandex.ru/stat/v1/data'
 
+DATE_FORMAT = '%Y-%m-%d'
+"""Формат дат по умолчанию ('%Y-%m-%d')."""
+
 DEFAULT_FOLDER = 'data'
 """Папка для сохранения .csv файлов по умолчанию."""
 

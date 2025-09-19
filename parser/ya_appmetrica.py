@@ -9,6 +9,7 @@ import requests
 from parser.constants import (
     APP_TYPES,
     CAMPAIGN_CATEGORIES,
+    DATE_FORMAT,
     DAYS_BEFORE,
     DEFAULT_FOLDER,
     DEFAULT_RETURNES,
@@ -59,9 +60,9 @@ class AppmetricaSaveClient:
         Получает отчет из Яндекс.Апметрика для указанного магазина и периода.
         """
         try:
-            date_obj = dt.datetime.strptime(date_reports, '%Y-%m-%d')
+            date_obj = dt.datetime.strptime(date_reports, DATE_FORMAT)
             days_before = date_obj - dt.timedelta(days=DAYS_BEFORE)
-            days_before = days_before.strftime('%Y-%m-%d')
+            days_before = days_before.strftime(DATE_FORMAT)
             url = YANDEX_APPMETRICA_URL
             headers = {
                 "Authorization": f"OAuth {self.token}"}
